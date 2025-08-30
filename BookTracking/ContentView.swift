@@ -1,3 +1,229 @@
+// MARK: - Book Detail View
+struct BookDetailView: View {
+    @Binding var book: Book
+    let saveAction: () -> Void
+    @State private var showingAddRecord = false
+    @State private var showingEditRecord = false
+    @State private var showingEditBook = false
+    @State private var editingRecordIndex: Int?
+    
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                // Kapak Resmi ve Kitap Bilgileri
+                HStack(spacing: 16) {
+                    // Kapak resmi
+                    if let coverImage = book.coverImage {
+                        Image(uiImage: coverImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 120, height: 160)
+                            .cornerRadius(10)
+                            .shadow(radius: 6)
+                    } else {
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color(.systemGray5))
+                            .frame(width: 120, height: 160)
+                            .overlay(
+                                VStack(spacing: 8) {
+                                    Image(systemName: "book.closed")
+                                        .font(.system(size: 40))
+                                        .foregroundColor(.gray)
+                                    Text("Kapak Yok")
+                                        .font(.caption)
+                                        .foregroundColor(.gray)
+                                }
+                            )
+                            .shadow(radius: 6)
+                    }
+                    
+                    // Kitap bilgileri
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Kitap Bilgileri")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                        
+                        InfoRow(title: "Başlık", value: book.title)
+                        InfoRow(title: "Yazar", value: book.author)
+                        InfoRow(title: "Toplam Sayfa", value: "\(book.totalPages)")
+                    }
+                }
+                
+                Divider()
+                
+                // İlerleme Bilgileri
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Okuma İlerlemesi")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                        
+                        Spacer()
+                        
+                        Button(book.isCompleted ? "Devam Et" : "Tamamlandı") {
+                            book.isCompleted.toggle()
+                            saveAction()
+                        }
+                        .font(.subheadline)
+                        .foregroundColor(book.isCompleted ? .orange : .green)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(book.isCompleted ? Color.orange.opacity(0.1) : Color.green.opacity(0.1))
+                        .cornerRadius(8)
+                    }
+                    
+                    if book.isCompleted {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                                .font(.title2)
+                            Text("Kitap tamamlandı!")
+                                .font(.headline)
+                                .foregroundColor(.green)
+                        }
+                        .padding(.vertical, 8)
+                    }
+                    
+                    VStack(spacing: 8) {
+                        HStack {
+                            Text("Okunan Sayfa:")
+                            Spacer()
+                            Text("\(book.totalPagesRead)")
+                                .fontWeight(.semibold)
+                        }
+                        
+                        HStack {
+                            Text("Kalan Sayfa:")
+                            Spacer()
+                            Text("\(book.remainingPages)")
+                                .fontWeight(.semibold)
+                                .foregroundColor(book.isCompleted ? .green : .orange)
+                        }
+                        
+                        HStack {
+                            Text("Tamamlanma Yüzdesi:")
+                            Spacer()
+                            Text(book.isCompleted ? "Tamamlandı" : "%\(String(format: "%.1f", book.progressPercentage))")
+                                .fontWeight(.semibold)
+                                .foregroundColor(book.isCompleted ? .green : .blue)
+                        }
+                        
+                        ProgressView(value: book.progressPercentage, total: 100)
+                            .progressViewStyle(LinearProgressViewStyle(tint: book.isCompleted ? .green : .blue))
+                            .scaleEffect(x: 1, y: 2, anchor: .center)
+                    }
+                }
+                
+                Divider()
+                
+                // Okuma Kayıtları
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Okuma Kayıtları")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                        
+                        Spacer()
+                        
+                        Button("Yeni Kayıt") {
+                            showingAddRecord = true
+                        }
+                        .font(.subheadline)
+                        .foregroundColor(.blue)
+                    }
+                    
+                    if book.readingRecords.isEmpty {
+                        Text("Henüz okuma kaydı bulunmuyor.")
+                            .foregroundColor(.secondary)
+                            .italic()
+                    } else {
+                        ForEach(book.readingRecords.sorted(by: { $0.date > $1.date })) { record in
+                            if let index = book.readingRecords.firstIndex(where: { $0.id == record.id }) {
+                                ReadingRecordRow(
+                                    record: record,
+                                    onEdit: {
+                                        editingRecordIndex = index
+                                        showingEditRecord = true
+                                    },
+                                    onDelete: {
+                                        book.readingRecords.remove(at: index)
+                                        saveAction()
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+                
+                Spacer(minLength: 100)
+            }
+            .padding()
+        }
+        .navigationTitle(book.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("Düzenle") {
+                    showingEditBook = true
+                }
+            }
+        }
+        .sheet(isPresented: $showingAddRecord) {
+            AddReadingRecordView(book: $book, saveAction: saveAction)
+        }
+        .sheet(isPresented: $showingEditRecord) {
+            if let index = editingRecordIndex {
+                EditReadingRecordView(
+                    book: $book,
+                    recordIndex: index,
+                    saveAction: saveAction
+                )
+            }
+        }
+        .sheet(isPresented: $showingEditBook) {
+            EditBookView(book: $book, saveAction: saveAction)
+        }
+    }
+}
+
+// MARK: - Image Picker
+struct ImagePicker: UIViewControllerRepresentable {
+    @Binding var image: UIImage?
+    let sourceType: UIImagePickerController.SourceType
+    @Environment(\.presentationMode) private var presentationMode
+    
+    func makeUIViewController(context: UIViewControllerRepresentableContext<ImagePicker>) -> UIImagePickerController {
+        let imagePicker = UIImagePickerController()
+        imagePicker.allowsEditing = true
+        imagePicker.sourceType = sourceType
+        imagePicker.delegate = context.coordinator
+        return imagePicker
+    }
+    
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: UIViewControllerRepresentableContext<ImagePicker>) {
+        // Güncelleme gerekmiyor
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        var parent: ImagePicker
+        
+        init(_ parent: ImagePicker) {
+            self.parent = parent
+        }
+        
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+            if let uiImage = info[UIImagePickerController.InfoKey.editedImage] as? UIImage {
+                parent.image = uiImage
+            }
+            parent.presentationMode.wrappedValue.dismiss()
+        }
+    }
+}
+
 import SwiftUI
 
 // MARK: - Models
@@ -8,6 +234,7 @@ struct Book: Identifiable, Codable {
     var totalPages: Int
     var isCompleted: Bool = false
     var readingRecords: [ReadingRecord] = []
+    var coverImageData: Data? = nil // Kapak resmi verisi
     
     var totalPagesRead: Int {
         readingRecords.reduce(0) { $0 + $1.pagesRead }
@@ -22,6 +249,12 @@ struct Book: Identifiable, Codable {
     var remainingPages: Int {
         if isCompleted { return 0 }
         return max(0, totalPages - totalPagesRead)
+    }
+    
+    // Kapak resmini UIImage olarak döndür
+    var coverImage: UIImage? {
+        guard let imageData = coverImageData else { return nil }
+        return UIImage(data: imageData)
     }
 }
 
@@ -93,10 +326,61 @@ struct AddBookView: View {
     @State private var totalPages = ""
     @State private var showingAlert = false
     @State private var alertMessage = ""
+    @State private var selectedImage: UIImage?
+    @State private var showingImagePicker = false
+    @State private var showingActionSheet = false
+    @State private var imageSourceType: UIImagePickerController.SourceType = .photoLibrary
     
     var body: some View {
         NavigationView {
             Form {
+                // Kapak Resmi Bölümü
+                Section(header: Text("Kapak Resmi")) {
+                    HStack {
+                        Spacer()
+                        VStack(spacing: 12) {
+                            if let selectedImage = selectedImage {
+                                Image(uiImage: selectedImage)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 120, height: 160)
+                                    .cornerRadius(8)
+                                    .shadow(radius: 4)
+                            } else {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color(.systemGray5))
+                                    .frame(width: 120, height: 160)
+                                    .overlay(
+                                        VStack(spacing: 8) {
+                                            Image(systemName: "book.closed")
+                                                .font(.system(size: 40))
+                                                .foregroundColor(.gray)
+                                            Text("Kapak Resmi")
+                                                .font(.caption)
+                                                .foregroundColor(.gray)
+                                        }
+                                    )
+                            }
+                            
+                            Button(selectedImage == nil ? "Resim Seç" : "Resmi Değiştir") {
+                                showingActionSheet = true
+                            }
+                            .font(.subheadline)
+                            .foregroundColor(.blue)
+                            
+                            if selectedImage != nil {
+                                Button("Resmi Kaldır") {
+                                    selectedImage = nil
+                                }
+                                .font(.caption)
+                                .foregroundColor(.red)
+                            }
+                        }
+                        Spacer()
+                    }
+                    .padding(.vertical, 8)
+                }
+                
                 Section(header: Text("Kitap Bilgileri")) {
                     TextField("Kitap Adı", text: $title)
                     TextField("Yazar", text: $author)
@@ -120,12 +404,30 @@ struct AddBookView: View {
         .alert("Bilgi", isPresented: $showingAlert) {
             Button("Tamam", role: .cancel) {
                 if alertMessage == "Kitap başarıyla eklendi!" {
-                    // Kitap başarıyla eklendiyse bekleyen sekmesine geç
                     selectedTab = 1
                 }
             }
         } message: {
             Text(alertMessage)
+        }
+        .actionSheet(isPresented: $showingActionSheet) {
+            ActionSheet(
+                title: Text("Kapak Resmi Seç"),
+                buttons: [
+                    .default(Text("Kameradan Çek")) {
+                        imageSourceType = .camera
+                        showingImagePicker = true
+                    },
+                    .default(Text("Galeriden Seç")) {
+                        imageSourceType = .photoLibrary
+                        showingImagePicker = true
+                    },
+                    .cancel()
+                ]
+            )
+        }
+        .sheet(isPresented: $showingImagePicker) {
+            ImagePicker(image: $selectedImage, sourceType: imageSourceType)
         }
     }
     
@@ -142,7 +444,13 @@ struct AddBookView: View {
             return
         }
         
-        let newBook = Book(title: title, author: author, totalPages: pages)
+        var newBook = Book(title: title, author: author, totalPages: pages)
+        
+        // Resmi Data formatında kaydet
+        if let selectedImage = selectedImage {
+            newBook.coverImageData = selectedImage.jpegData(compressionQuality: 0.7)
+        }
+        
         books.append(newBook)
         saveBooks()
         
@@ -150,6 +458,7 @@ struct AddBookView: View {
         title = ""
         author = ""
         totalPages = ""
+        selectedImage = nil
         
         alertMessage = "Kitap başarıyla eklendi!"
         showingAlert = true
@@ -493,7 +802,26 @@ struct ReadingBookRowView: View {
     let onToggleComplete: () -> Void
     
     var body: some View {
-        HStack {
+        HStack(spacing: 12) {
+            // Kapak resmi
+            if let coverImage = book.coverImage {
+                Image(uiImage: coverImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 50, height: 65)
+                    .cornerRadius(6)
+                    .clipped()
+            } else {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color(.systemGray5))
+                    .frame(width: 50, height: 65)
+                    .overlay(
+                        Image(systemName: "book.closed")
+                            .font(.system(size: 20))
+                            .foregroundColor(.gray)
+                    )
+            }
+            
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text(book.title)
@@ -550,7 +878,34 @@ struct UnreadBookRowView: View {
     let onEdit: () -> Void
     
     var body: some View {
-        HStack {
+        HStack(spacing: 12) {
+            // Kapak resmi
+            if let coverImage = book.coverImage {
+                Image(uiImage: coverImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 50, height: 65)
+                    .cornerRadius(6)
+                    .clipped()
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.orange, lineWidth: 2)
+                    )
+            } else {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color(.systemGray5))
+                    .frame(width: 50, height: 65)
+                    .overlay(
+                        Image(systemName: "book.closed")
+                            .font(.system(size: 20))
+                            .foregroundColor(.orange)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.orange, lineWidth: 2)
+                    )
+            }
+            
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text(book.title)
@@ -616,7 +971,60 @@ struct CompletedBookRowView: View {
     let onToggleComplete: () -> Void
     
     var body: some View {
-        HStack {
+        HStack(spacing: 12) {
+            // Kapak resmi
+            if let coverImage = book.coverImage {
+                Image(uiImage: coverImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 50, height: 65)
+                    .cornerRadius(6)
+                    .clipped()
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.green, lineWidth: 2)
+                    )
+                    .overlay(
+                        VStack {
+                            HStack {
+                                Spacer()
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                    .background(Color.white.clipShape(Circle()))
+                                    .font(.system(size: 16))
+                            }
+                            Spacer()
+                        }
+                        .padding(4)
+                    )
+            } else {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color(.systemGray5))
+                    .frame(width: 50, height: 65)
+                    .overlay(
+                        Image(systemName: "book.closed")
+                            .font(.system(size: 20))
+                            .foregroundColor(.green)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.green, lineWidth: 2)
+                    )
+                    .overlay(
+                        VStack {
+                            HStack {
+                                Spacer()
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                    .background(Color.white.clipShape(Circle()))
+                                    .font(.system(size: 16))
+                            }
+                            Spacer()
+                        }
+                        .padding(4)
+                    )
+            }
+            
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text(book.title)
@@ -673,164 +1081,6 @@ struct CompletedBookRowView: View {
 }
 
 // MARK: - Book Detail View
-struct BookDetailView: View {
-    @Binding var book: Book
-    let saveAction: () -> Void
-    @State private var showingAddRecord = false
-    @State private var showingEditRecord = false
-    @State private var showingEditBook = false
-    @State private var editingRecordIndex: Int?
-    
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                // Kitap Bilgileri
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Kitap Bilgileri")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                    
-                    InfoRow(title: "Başlık", value: book.title)
-                    InfoRow(title: "Yazar", value: book.author)
-                    InfoRow(title: "Toplam Sayfa", value: "\(book.totalPages)")
-                }
-                
-                Divider()
-                
-                // İlerleme Bilgileri
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Text("Okuma İlerlemesi")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                        
-                        Spacer()
-                        
-                        Button(book.isCompleted ? "Devam Et" : "Tamamlandı") {
-                            book.isCompleted.toggle()
-                            saveAction()
-                        }
-                        .font(.subheadline)
-                        .foregroundColor(book.isCompleted ? .orange : .green)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(book.isCompleted ? Color.orange.opacity(0.1) : Color.green.opacity(0.1))
-                        .cornerRadius(8)
-                    }
-                    
-                    if book.isCompleted {
-                        HStack {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.green)
-                                .font(.title2)
-                            Text("Kitap tamamlandı!")
-                                .font(.headline)
-                                .foregroundColor(.green)
-                        }
-                        .padding(.vertical, 8)
-                    }
-                    
-                    VStack(spacing: 8) {
-                        HStack {
-                            Text("Okunan Sayfa:")
-                            Spacer()
-                            Text("\(book.totalPagesRead)")
-                                .fontWeight(.semibold)
-                        }
-                        
-                        HStack {
-                            Text("Kalan Sayfa:")
-                            Spacer()
-                            Text("\(book.remainingPages)")
-                                .fontWeight(.semibold)
-                                .foregroundColor(book.isCompleted ? .green : .orange)
-                        }
-                        
-                        HStack {
-                            Text("Tamamlanma Yüzdesi:")
-                            Spacer()
-                            Text(book.isCompleted ? "Tamamlandı" : "%\(String(format: "%.1f", book.progressPercentage))")
-                                .fontWeight(.semibold)
-                                .foregroundColor(book.isCompleted ? .green : .blue)
-                        }
-                        
-                        ProgressView(value: book.progressPercentage, total: 100)
-                            .progressViewStyle(LinearProgressViewStyle(tint: book.isCompleted ? .green : .blue))
-                            .scaleEffect(x: 1, y: 2, anchor: .center)
-                    }
-                }
-                
-                Divider()
-                
-                // Okuma Kayıtları
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Text("Okuma Kayıtları")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                        
-                        Spacer()
-                        
-                        Button("Yeni Kayıt") {
-                            showingAddRecord = true
-                        }
-                        .font(.subheadline)
-                        .foregroundColor(.blue)
-                    }
-                    
-                    if book.readingRecords.isEmpty {
-                        Text("Henüz okuma kaydı bulunmuyor.")
-                            .foregroundColor(.secondary)
-                            .italic()
-                    } else {
-                        ForEach(book.readingRecords.sorted(by: { $0.date > $1.date })) { record in
-                            if let index = book.readingRecords.firstIndex(where: { $0.id == record.id }) {
-                                ReadingRecordRow(
-                                    record: record,
-                                    onEdit: {
-                                        editingRecordIndex = index
-                                        showingEditRecord = true
-                                    },
-                                    onDelete: {
-                                        book.readingRecords.remove(at: index)
-                                        saveAction()
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-                
-                Spacer(minLength: 100)
-            }
-            .padding()
-        }
-        .navigationTitle(book.title)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button("Düzenle") {
-                    showingEditBook = true
-                }
-            }
-        }
-        .sheet(isPresented: $showingAddRecord) {
-            AddReadingRecordView(book: $book, saveAction: saveAction)
-        }
-        .sheet(isPresented: $showingEditRecord) {
-            if let index = editingRecordIndex {
-                EditReadingRecordView(
-                    book: $book,
-                    recordIndex: index,
-                    saveAction: saveAction
-                )
-            }
-        }
-        .sheet(isPresented: $showingEditBook) {
-            EditBookView(book: $book, saveAction: saveAction)
-        }
-    }
-}
 
 // MARK: - Info Row
 struct InfoRow: View {
@@ -917,8 +1167,12 @@ struct EditBookView: View {
     @State private var author: String
     @State private var totalPages: String
     @State private var isCompleted: Bool
+    @State private var selectedImage: UIImage?
     @State private var showingAlert = false
     @State private var alertMessage = ""
+    @State private var showingImagePicker = false
+    @State private var showingActionSheet = false
+    @State private var imageSourceType: UIImagePickerController.SourceType = .photoLibrary
     
     init(book: Binding<Book>, saveAction: @escaping () -> Void) {
         self._book = book
@@ -929,11 +1183,59 @@ struct EditBookView: View {
         self._author = State(initialValue: bookValue.author)
         self._totalPages = State(initialValue: String(bookValue.totalPages))
         self._isCompleted = State(initialValue: bookValue.isCompleted)
+        self._selectedImage = State(initialValue: bookValue.coverImage)
     }
     
     var body: some View {
         NavigationView {
             Form {
+                // Kapak Resmi Bölümü
+                Section(header: Text("Kapak Resmi")) {
+                    HStack {
+                        Spacer()
+                        VStack(spacing: 12) {
+                            if let selectedImage = selectedImage {
+                                Image(uiImage: selectedImage)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 120, height: 160)
+                                    .cornerRadius(8)
+                                    .shadow(radius: 4)
+                            } else {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color(.systemGray5))
+                                    .frame(width: 120, height: 160)
+                                    .overlay(
+                                        VStack(spacing: 8) {
+                                            Image(systemName: "book.closed")
+                                                .font(.system(size: 40))
+                                                .foregroundColor(.gray)
+                                            Text("Kapak Resmi")
+                                                .font(.caption)
+                                                .foregroundColor(.gray)
+                                        }
+                                    )
+                            }
+                            
+                            Button(selectedImage == nil ? "Resim Seç" : "Resmi Değiştir") {
+                                showingActionSheet = true
+                            }
+                            .font(.subheadline)
+                            .foregroundColor(.blue)
+                            
+                            if selectedImage != nil {
+                                Button("Resmi Kaldır") {
+                                    selectedImage = nil
+                                }
+                                .font(.caption)
+                                .foregroundColor(.red)
+                            }
+                        }
+                        Spacer()
+                    }
+                    .padding(.vertical, 8)
+                }
+                
                 Section(header: Text("Kitap Bilgileri")) {
                     TextField("Kitap Adı", text: $title)
                     TextField("Yazar", text: $author)
@@ -974,6 +1276,25 @@ struct EditBookView: View {
         } message: {
             Text(alertMessage)
         }
+        .actionSheet(isPresented: $showingActionSheet) {
+            ActionSheet(
+                title: Text("Kapak Resmi Seç"),
+                buttons: [
+                    .default(Text("Kameradan Çek")) {
+                        imageSourceType = .camera
+                        showingImagePicker = true
+                    },
+                    .default(Text("Galeriden Seç")) {
+                        imageSourceType = .photoLibrary
+                        showingImagePicker = true
+                    },
+                    .cancel()
+                ]
+            )
+        }
+        .sheet(isPresented: $showingImagePicker) {
+            ImagePicker(image: $selectedImage, sourceType: imageSourceType)
+        }
     }
     
     func updateBook() {
@@ -993,6 +1314,13 @@ struct EditBookView: View {
         book.author = author
         book.totalPages = pages
         book.isCompleted = isCompleted
+        
+        // Resmi güncelle
+        if let selectedImage = selectedImage {
+            book.coverImageData = selectedImage.jpegData(compressionQuality: 0.7)
+        } else {
+            book.coverImageData = nil
+        }
         
         saveAction()
         presentationMode.wrappedValue.dismiss()
