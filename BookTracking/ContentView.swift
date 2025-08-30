@@ -6,6 +6,7 @@ struct Book: Identifiable, Codable {
     var title: String
     var author: String
     var totalPages: Int
+    var isCompleted: Bool = false
     var readingRecords: [ReadingRecord] = []
     
     var totalPagesRead: Int {
@@ -14,11 +15,13 @@ struct Book: Identifiable, Codable {
     
     var progressPercentage: Double {
         guard totalPages > 0 else { return 0 }
+        if isCompleted { return 100 }
         return Double(totalPagesRead) / Double(totalPages) * 100
     }
     
     var remainingPages: Int {
-        max(0, totalPages - totalPagesRead)
+        if isCompleted { return 0 }
+        return max(0, totalPages - totalPagesRead)
     }
 }
 
@@ -32,8 +35,6 @@ struct ReadingRecord: Identifiable, Codable {
         max(0, endPage - startPage + 1)
     }
 }
-
-
 
 // MARK: - Content View
 struct ContentView: View {
@@ -49,12 +50,19 @@ struct ContentView: View {
                 }
                 .tag(0)
             
+            CompletedBooksView(books: $books)
+                .tabItem {
+                    Image(systemName: "checkmark.circle")
+                    Text("Tamamlanan")
+                }
+                .tag(1)
+            
             AddBookView(books: $books, selectedTab: $selectedTab)
                 .tabItem {
                     Image(systemName: "plus.circle")
                     Text("Kitap Ekle")
                 }
-                .tag(1)
+                .tag(2)
         }
         .onAppear {
             loadBooks()
@@ -150,26 +158,99 @@ struct AddBookView: View {
 // MARK: - Book List View
 struct BookListView: View {
     @Binding var books: [Book]
+    @State private var showingEditBook = false
+    @State private var editingBookIndex: Int?
+    
+    var activeBooks: [Book] {
+        books.filter { !$0.isCompleted }
+            .sorted { $0.progressPercentage > $1.progressPercentage }
+    }
     
     var body: some View {
         NavigationView {
             List {
-                ForEach(books.indices, id: \.self) { index in
-                    NavigationLink(destination: BookDetailView(book: $books[index], saveAction: saveBooks)) {
-                        BookRowView(book: books[index])
+                if activeBooks.isEmpty {
+                    VStack(spacing: 16) {
+                        Image(systemName: "books.vertical")
+                            .font(.system(size: 50))
+                            .foregroundColor(.gray)
+                        
+                        Text("Henüz aktif kitabınız yok")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                        
+                        Text("Yeni bir kitap ekleyin ve okumaya başlayın!")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .listRowBackground(Color.clear)
+                } else {
+                    // Sıralama bilgisi
+                    Section {
+                        HStack {
+                            Image(systemName: "arrow.up.arrow.down")
+                                .foregroundColor(.blue)
+                            Text("İlerlemeye göre sıralandı")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text("\(activeBooks.count) aktif kitap")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    
+                    ForEach(activeBooks, id: \.id) { book in
+                        if let bookIndex = books.firstIndex(where: { $0.id == book.id }) {
+                            NavigationLink(destination: BookDetailView(book: $books[bookIndex], saveAction: saveBooks)) {
+                                BookRowView(
+                                    book: book,
+                                    onEdit: {
+                                        editingBookIndex = bookIndex
+                                        showingEditBook = true
+                                    },
+                                    onToggleComplete: {
+                                        books[bookIndex].isCompleted.toggle()
+                                        saveBooks()
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    .onDelete(perform: deleteBooks)
                 }
-                .onDelete(perform: deleteBooks)
             }
-            .navigationTitle("Kitaplarım")
+            .navigationTitle("Aktif Kitaplar")
             .toolbar {
-                EditButton()
+                if !activeBooks.isEmpty {
+                    EditButton()
+                }
+            }
+        }
+        .sheet(isPresented: $showingEditBook) {
+            if let index = editingBookIndex {
+                EditBookView(
+                    book: $books[index],
+                    saveAction: saveBooks
+                )
             }
         }
     }
     
     func deleteBooks(offsets: IndexSet) {
-        books.remove(atOffsets: offsets)
+        // activeBooks dizisinden silinecek kitapları al
+        let booksToDelete = offsets.map { activeBooks[$0] }
+        
+        // Ana books dizisinden bu kitapları sil
+        for bookToDelete in booksToDelete {
+            if let index = books.firstIndex(where: { $0.id == bookToDelete.id }) {
+                books.remove(at: index)
+            }
+        }
+        
         saveBooks()
     }
     
@@ -180,35 +261,246 @@ struct BookListView: View {
     }
 }
 
+// MARK: - Completed Books View
+struct CompletedBooksView: View {
+    @Binding var books: [Book]
+    @State private var showingEditBook = false
+    @State private var editingBookIndex: Int?
+    
+    var completedBooks: [Book] {
+        books.filter { $0.isCompleted }
+    }
+    
+    var body: some View {
+        NavigationView {
+            List {
+                if completedBooks.isEmpty {
+                    VStack(spacing: 16) {
+                        Image(systemName: "checkmark.circle")
+                            .font(.system(size: 50))
+                            .foregroundColor(.gray)
+                        
+                        Text("Henüz tamamlanan kitabınız yok")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                        
+                        Text("Bir kitabı bitirdiğinizde burada görünecek!")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .listRowBackground(Color.clear)
+                } else {
+                    // İstatistikler Bölümü
+                    Section {
+                        VStack(spacing: 12) {
+                            HStack {
+                                Image(systemName: "books.vertical.fill")
+                                    .foregroundColor(.green)
+                                Text("Toplam \(completedBooks.count) kitap tamamladınız!")
+                                    .font(.headline)
+                                    .foregroundColor(.green)
+                            }
+                            
+                            let totalPages = completedBooks.reduce(0) { $0 + $1.totalPages }
+                            HStack {
+                                Image(systemName: "doc.text.fill")
+                                    .foregroundColor(.blue)
+                                Text("Toplam \(totalPages) sayfa okudunuz")
+                                    .font(.subheadline)
+                                    .foregroundColor(.blue)
+                            }
+                        }
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(10)
+                    }
+                    .listRowBackground(Color.clear)
+                    
+                    // Tamamlanan Kitaplar
+                    Section("Tamamlanan Kitaplar") {
+                        ForEach(books.indices, id: \.self) { index in
+                            if books[index].isCompleted {
+                                NavigationLink(destination: BookDetailView(book: $books[index], saveAction: saveBooks)) {
+                                    CompletedBookRowView(
+                                        book: books[index],
+                                        onEdit: {
+                                            editingBookIndex = index
+                                            showingEditBook = true
+                                        },
+                                        onToggleComplete: {
+                                            books[index].isCompleted.toggle()
+                                            saveBooks()
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                        .onDelete(perform: deleteBooks)
+                    }
+                }
+            }
+            .navigationTitle("Tamamlanan Kitaplar")
+            .toolbar {
+                if !completedBooks.isEmpty {
+                    EditButton()
+                }
+            }
+        }
+        .sheet(isPresented: $showingEditBook) {
+            if let index = editingBookIndex {
+                EditBookView(
+                    book: $books[index],
+                    saveAction: saveBooks
+                )
+            }
+        }
+    }
+    
+    func deleteBooks(offsets: IndexSet) {
+        // Sadece tamamlanan kitapların indekslerini al
+        let completedBookIndices = books.enumerated().compactMap { index, book in
+            book.isCompleted ? index : nil
+        }
+        
+        // Silinen tamamlanan kitapların gerçek indekslerini bul
+        let indicesToDelete = offsets.map { completedBookIndices[$0] }
+        
+        // Büyükten küçüğe sırala ve sil
+        for index in indicesToDelete.sorted(by: >) {
+            books.remove(at: index)
+        }
+        
+        saveBooks()
+    }
+    
+    func saveBooks() {
+        if let encoded = try? JSONEncoder().encode(books) {
+            UserDefaults.standard.set(encoded, forKey: "books")
+        }
+    }
+}
+
+// MARK: - Completed Book Row View
+struct CompletedBookRowView: View {
+    let book: Book
+    let onEdit: () -> Void
+    let onToggleComplete: () -> Void
+    
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(book.title)
+                        .font(.headline)
+                        .lineLimit(2)
+                        .foregroundColor(.primary)
+                    
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                        .font(.caption)
+                }
+                
+                Text(book.author)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                
+                HStack {
+                    Text("\(book.totalPages) sayfa")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    Spacer()
+                    
+                    Text("Tamamlandı ✅")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(.green)
+                }
+                
+                // Son okuma tarihi
+                if let lastRecord = book.readingRecords.max(by: { $0.date < $1.date }) {
+                    Text("Son okuma: \(DateFormatter.shortDate.string(from: lastRecord.date))")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            VStack(spacing: 8) {
+                Button(action: onEdit) {
+                    Image(systemName: "pencil")
+                        .font(.subheadline)
+                        .foregroundColor(.blue)
+                }
+                
+                Button(action: onToggleComplete) {
+                    Image(systemName: "arrow.counterclockwise")
+                        .font(.subheadline)
+                        .foregroundColor(.orange)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
 // MARK: - Book Row View
 struct BookRowView: View {
     let book: Book
+    let onEdit: () -> Void
+    let onToggleComplete: () -> Void
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(book.title)
-                .font(.headline)
-                .lineLimit(2)
-            
-            Text(book.author)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-            
-            HStack {
-                Text("\(book.totalPagesRead)/\(book.totalPages) sayfa")
-                    .font(.caption)
+        HStack {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(book.title)
+                        .font(.headline)
+                        .lineLimit(2)
+                        .strikethrough(book.isCompleted)
+                    
+                    if book.isCompleted {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                            .font(.caption)
+                    }
+                }
+                
+                Text(book.author)
+                    .font(.subheadline)
                     .foregroundColor(.secondary)
                 
-                Spacer()
+                HStack {
+                    Text("\(book.totalPagesRead)/\(book.totalPages) sayfa")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    Spacer()
+                    
+                    Text(book.isCompleted ? "Tamamlandı" : "%\(String(format: "%.1f", book.progressPercentage))")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(book.isCompleted ? .green : .blue)
+                }
                 
-                Text("%\(String(format: "%.1f", book.progressPercentage))")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(.blue)
+                ProgressView(value: book.progressPercentage, total: 100)
+                    .progressViewStyle(LinearProgressViewStyle(tint: book.isCompleted ? .green : .blue))
             }
             
-            ProgressView(value: book.progressPercentage, total: 100)
-                .progressViewStyle(LinearProgressViewStyle(tint: .blue))
+            VStack(spacing: 8) {
+                Button(action: onEdit) {
+                    Image(systemName: "pencil")
+                        .font(.subheadline)
+                        .foregroundColor(.blue)
+                }
+                
+                Button(action: onToggleComplete) {
+                    Image(systemName: book.isCompleted ? "checkmark.circle.fill" : "circle")
+                        .font(.subheadline)
+                        .foregroundColor(book.isCompleted ? .green : .gray)
+                }
+            }
         }
         .padding(.vertical, 4)
     }
@@ -219,6 +511,9 @@ struct BookDetailView: View {
     @Binding var book: Book
     let saveAction: () -> Void
     @State private var showingAddRecord = false
+    @State private var showingEditRecord = false
+    @State private var showingEditBook = false
+    @State private var editingRecordIndex: Int?
     
     var body: some View {
         ScrollView {
@@ -238,9 +533,36 @@ struct BookDetailView: View {
                 
                 // İlerleme Bilgileri
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Okuma İlerlemesi")
-                        .font(.title2)
-                        .fontWeight(.bold)
+                    HStack {
+                        Text("Okuma İlerlemesi")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                        
+                        Spacer()
+                        
+                        Button(book.isCompleted ? "Devam Et" : "Tamamlandı") {
+                            book.isCompleted.toggle()
+                            saveAction()
+                        }
+                        .font(.subheadline)
+                        .foregroundColor(book.isCompleted ? .orange : .green)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(book.isCompleted ? Color.orange.opacity(0.1) : Color.green.opacity(0.1))
+                        .cornerRadius(8)
+                    }
+                    
+                    if book.isCompleted {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                                .font(.title2)
+                            Text("Kitap tamamlandı!")
+                                .font(.headline)
+                                .foregroundColor(.green)
+                        }
+                        .padding(.vertical, 8)
+                    }
                     
                     VStack(spacing: 8) {
                         HStack {
@@ -255,19 +577,19 @@ struct BookDetailView: View {
                             Spacer()
                             Text("\(book.remainingPages)")
                                 .fontWeight(.semibold)
-                                .foregroundColor(.orange)
+                                .foregroundColor(book.isCompleted ? .green : .orange)
                         }
                         
                         HStack {
                             Text("Tamamlanma Yüzdesi:")
                             Spacer()
-                            Text("%\(String(format: "%.1f", book.progressPercentage))")
+                            Text(book.isCompleted ? "Tamamlandı" : "%\(String(format: "%.1f", book.progressPercentage))")
                                 .fontWeight(.semibold)
-                                .foregroundColor(.blue)
+                                .foregroundColor(book.isCompleted ? .green : .blue)
                         }
                         
                         ProgressView(value: book.progressPercentage, total: 100)
-                            .progressViewStyle(LinearProgressViewStyle(tint: .blue))
+                            .progressViewStyle(LinearProgressViewStyle(tint: book.isCompleted ? .green : .blue))
                             .scaleEffect(x: 1, y: 2, anchor: .center)
                     }
                 }
@@ -296,7 +618,19 @@ struct BookDetailView: View {
                             .italic()
                     } else {
                         ForEach(book.readingRecords.sorted(by: { $0.date > $1.date })) { record in
-                            ReadingRecordRow(record: record)
+                            if let index = book.readingRecords.firstIndex(where: { $0.id == record.id }) {
+                                ReadingRecordRow(
+                                    record: record,
+                                    onEdit: {
+                                        editingRecordIndex = index
+                                        showingEditRecord = true
+                                    },
+                                    onDelete: {
+                                        book.readingRecords.remove(at: index)
+                                        saveAction()
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -307,8 +641,30 @@ struct BookDetailView: View {
         }
         .navigationTitle(book.title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("Düzenle") {
+                    showingEditBook = true
+                }
+            }
+        }
         .sheet(isPresented: $showingAddRecord) {
             AddReadingRecordView(book: $book, saveAction: saveAction)
+        }
+        .sheet(isPresented: $showingAddRecord) {
+            AddReadingRecordView(book: $book, saveAction: saveAction)
+        }
+        .sheet(isPresented: $showingEditRecord) {
+            if let index = editingRecordIndex {
+                EditReadingRecordView(
+                    book: $book,
+                    recordIndex: index,
+                    saveAction: saveAction
+                )
+            }
+        }
+        .sheet(isPresented: $showingEditBook) {
+            EditBookView(book: $book, saveAction: saveAction)
         }
     }
 }
@@ -332,30 +688,247 @@ struct InfoRow: View {
 // MARK: - Reading Record Row
 struct ReadingRecordRow: View {
     let record: ReadingRecord
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+    @State private var showingDeleteAlert = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(DateFormatter.shortDate.string(from: record.date))
-                    .font(.subheadline)
-                    .fontWeight(.medium)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(DateFormatter.shortDate.string(from: record.date))
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    
+                    Text("Sayfa \(record.startPage) - \(record.endPage)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
                 
                 Spacer()
                 
-                Text("\(record.pagesRead) sayfa")
-                    .font(.subheadline)
-                    .foregroundColor(.blue)
-                    .fontWeight(.medium)
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("\(record.pagesRead) sayfa")
+                        .font(.subheadline)
+                        .foregroundColor(.blue)
+                        .fontWeight(.medium)
+                    
+                    HStack(spacing: 12) {
+                        Button(action: onEdit) {
+                            Image(systemName: "pencil")
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                        }
+                        
+                        Button(action: { showingDeleteAlert = true }) {
+                            Image(systemName: "trash")
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
+                    }
+                }
             }
-            
-            Text("Sayfa \(record.startPage) - \(record.endPage)")
-                .font(.caption)
-                .foregroundColor(.secondary)
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 12)
+        .padding(.vertical, 12)
+        .padding(.horizontal, 16)
         .background(Color(.systemGray6))
-        .cornerRadius(8)
+        .cornerRadius(10)
+        .alert("Kayıt Sil", isPresented: $showingDeleteAlert) {
+            Button("İptal", role: .cancel) { }
+            Button("Sil", role: .destructive) {
+                onDelete()
+            }
+        } message: {
+            Text("Bu okuma kaydını silmek istediğinize emin misiniz?")
+        }
+    }
+}
+
+// MARK: - Edit Book View
+struct EditBookView: View {
+    @Binding var book: Book
+    let saveAction: () -> Void
+    @Environment(\.presentationMode) var presentationMode
+    
+    @State private var title: String
+    @State private var author: String
+    @State private var totalPages: String
+    @State private var isCompleted: Bool
+    @State private var showingAlert = false
+    @State private var alertMessage = ""
+    
+    init(book: Binding<Book>, saveAction: @escaping () -> Void) {
+        self._book = book
+        self.saveAction = saveAction
+        
+        let bookValue = book.wrappedValue
+        self._title = State(initialValue: bookValue.title)
+        self._author = State(initialValue: bookValue.author)
+        self._totalPages = State(initialValue: String(bookValue.totalPages))
+        self._isCompleted = State(initialValue: bookValue.isCompleted)
+    }
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                Section(header: Text("Kitap Bilgileri")) {
+                    TextField("Kitap Adı", text: $title)
+                    TextField("Yazar", text: $author)
+                    TextField("Toplam Sayfa Sayısı", text: $totalPages)
+                        .keyboardType(.numberPad)
+                }
+                
+                Section(header: Text("Durum")) {
+                    Toggle("Kitap Tamamlandı", isOn: $isCompleted)
+                }
+                
+                Section {
+                    Button(action: updateBook) {
+                        HStack {
+                            Spacer()
+                            Text("Güncelle")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                            Spacer()
+                        }
+                    }
+                    .listRowBackground(Color.blue)
+                }
+            }
+            .navigationTitle("Kitabı Düzenle")
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarItems(
+                leading: Button("İptal") {
+                    presentationMode.wrappedValue.dismiss()
+                },
+                trailing: Button("Güncelle") {
+                    updateBook()
+                }
+            )
+        }
+        .alert("Uyarı", isPresented: $showingAlert) {
+            Button("Tamam", role: .cancel) { }
+        } message: {
+            Text(alertMessage)
+        }
+    }
+    
+    func updateBook() {
+        guard !title.isEmpty, !author.isEmpty else {
+            alertMessage = "Lütfen kitap adı ve yazar bilgilerini girin."
+            showingAlert = true
+            return
+        }
+        
+        guard let pages = Int(totalPages), pages > 0 else {
+            alertMessage = "Lütfen geçerli bir sayfa sayısı girin."
+            showingAlert = true
+            return
+        }
+        
+        book.title = title
+        book.author = author
+        book.totalPages = pages
+        book.isCompleted = isCompleted
+        
+        saveAction()
+        presentationMode.wrappedValue.dismiss()
+    }
+}
+
+// MARK: - Edit Reading Record View
+struct EditReadingRecordView: View {
+    @Binding var book: Book
+    let recordIndex: Int
+    let saveAction: () -> Void
+    @Environment(\.presentationMode) var presentationMode
+    
+    @State private var date: Date
+    @State private var startPage: String
+    @State private var endPage: String
+    @State private var showingAlert = false
+    @State private var alertMessage = ""
+    
+    init(book: Binding<Book>, recordIndex: Int, saveAction: @escaping () -> Void) {
+        self._book = book
+        self.recordIndex = recordIndex
+        self.saveAction = saveAction
+        
+        let record = book.wrappedValue.readingRecords[recordIndex]
+        self._date = State(initialValue: record.date)
+        self._startPage = State(initialValue: String(record.startPage))
+        self._endPage = State(initialValue: String(record.endPage))
+    }
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                Section(header: Text("Okuma Bilgileri")) {
+                    DatePicker("Tarih", selection: $date, displayedComponents: .date)
+                    
+                    TextField("Başlangıç Sayfası", text: $startPage)
+                        .keyboardType(.numberPad)
+                    
+                    TextField("Bitiş Sayfası", text: $endPage)
+                        .keyboardType(.numberPad)
+                }
+                
+                Section {
+                    Button(action: updateRecord) {
+                        HStack {
+                            Spacer()
+                            Text("Güncelle")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                            Spacer()
+                        }
+                    }
+                    .listRowBackground(Color.blue)
+                }
+            }
+            .navigationTitle("Kaydı Düzenle")
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarItems(
+                leading: Button("İptal") {
+                    presentationMode.wrappedValue.dismiss()
+                },
+                trailing: Button("Güncelle") {
+                    updateRecord()
+                }
+            )
+        }
+        .alert("Uyarı", isPresented: $showingAlert) {
+            Button("Tamam", role: .cancel) { }
+        } message: {
+            Text(alertMessage)
+        }
+    }
+    
+    func updateRecord() {
+        guard let start = Int(startPage), let end = Int(endPage) else {
+            alertMessage = "Lütfen geçerli sayfa numaraları girin."
+            showingAlert = true
+            return
+        }
+        
+        guard start > 0, end > 0, start <= end else {
+            alertMessage = "Başlangıç sayfası bitiş sayfasından küçük veya eşit olmalıdır."
+            showingAlert = true
+            return
+        }
+        
+        guard end <= book.totalPages else {
+            alertMessage = "Bitiş sayfası kitabın toplam sayfa sayısını geçemez."
+            showingAlert = true
+            return
+        }
+        
+        book.readingRecords[recordIndex].date = date
+        book.readingRecords[recordIndex].startPage = start
+        book.readingRecords[recordIndex].endPage = end
+        
+        saveAction()
+        presentationMode.wrappedValue.dismiss()
     }
 }
 
